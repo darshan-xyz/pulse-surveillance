@@ -1,0 +1,98 @@
+version: '3.8'
+
+services:
+  # The Central Cloud API (Backend)
+  central-api:
+    build:
+      context: ./services/api
+    container_name: central-api
+    environment:
+      - ENV=production
+      - DB_DSN=postgres://postgres:postgres@postgres:5432/pulse?sslmode=disable
+    depends_on:
+      - postgres
+
+  # The React Web Dashboard (Frontend)
+  web:
+    build:
+      context: ./apps/web
+    container_name: web
+    depends_on:
+      - central-api
+
+  # Global API Gateway (Nginx)
+  nginx:
+    image: nginx:alpine
+    container_name: nginx_gateway
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - web
+      - central-api
+
+  # Postgres Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=pulse
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+
+  # The Local Edge Daemon
+  hss:
+    build:
+      context: ./hss
+    container_name: hss
+    ports:
+      - "8080:8080"
+    depends_on:
+      - central-api
+      - mediamtx
+    volumes:
+      - hss-data:/app/data
+      - hss-recordings:/app/recordings
+
+  # WebRTC TURN Server for NAT traversal
+  coturn:
+    image: coturn/coturn:latest
+    container_name: coturn
+    ports:
+      - "3478:3478/tcp"
+      - "3478:3478/udp"
+    command: >
+      -n --log-file=stdout --min-port=49152 --max-port=65535
+      --realm=localhost --user=pulse:landing
+
+  # (Mock) Local Camera for Testing
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: mediamtx
+    ports:
+      - "8554:8554"
+    environment:
+      - MTX_PROTOCOLS=tcp
+      - MTX_WEBRTC=no
+
+  ffmpeg-mock:
+    image: jrottenberg/ffmpeg:4.4-alpine
+    container_name: ffmpeg-mock
+    depends_on:
+      - mediamtx
+    command: >
+      -re -f lavfi -i testsrc=size=1280x720:rate=30 
+      -f lavfi -i sine=frequency=1000:sample_rate=48000 
+      -c:v libx264 -b:v 1M -preset veryfast -pix_fmt yuv420p -g 60
+      -c:a aac -b:a 128k
+      -f rtsp -rtsp_transport tcp rtsp://mediamtx:8554/cam1
+
+volumes:
+  hss-data:
+  hss-recordings:
+  pg-data:

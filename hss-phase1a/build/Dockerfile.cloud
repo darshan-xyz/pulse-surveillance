@@ -1,0 +1,26 @@
+# Build Stage
+FROM golang:alpine AS builder
+
+RUN apk add --no-cache git
+
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+# Build the Cloud Hub binary statically
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o pulse-cloud ./cmd/pulse-cloud
+
+# Final Stage (Scratch)
+FROM scratch
+
+# Need CA certificates for HTTPS/WSS
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+COPY --from=builder /app/pulse-cloud /pulse-cloud
+
+# The signaling hub runs on 9091
+EXPOSE 9091
+
+ENTRYPOINT ["/pulse-cloud"]

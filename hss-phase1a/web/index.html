@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HSS Local WebRTC Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f0f2f5;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            max-width: 800px;
+            width: 100%;
+        }
+        h1 { margin-top: 0; color: #1a1a1a; }
+        .controls {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        input, select {
+            padding: 8px 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        button:hover { background-color: #0056b3; }
+        video {
+            width: 100%;
+            background: #000;
+            border-radius: 4px;
+            aspect-ratio: 16/9;
+        }
+        .status {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            border-left: 4px solid #007bff;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>HSS WebRTC Test Client</h1>
+    <div class="controls">
+        <input type="text" id="cameraId" placeholder="Camera ID" value="test-camera-1" />
+        <button id="connectBtn">Connect Stream</button>
+    </div>
+    <video id="videoPlayer" autoplay playsinline controls muted></video>
+    <div class="status" id="statusLog">Status: Waiting to connect...</div>
+</div>
+
+<script>
+    const connectBtn = document.getElementById('connectBtn');
+    const videoPlayer = document.getElementById('videoPlayer');
+    const cameraIdInput = document.getElementById('cameraId');
+    const statusLog = document.getElementById('statusLog');
+
+    let pc = null;
+    let ws = null;
+    let sessionId = crypto.randomUUID();
+
+    function logStatus(msg) {
+        console.log(msg);
+        statusLog.textContent = `Status: ${msg}`;
+    }
+
+    connectBtn.addEventListener('click', async () => {
+        const camId = cameraIdInput.value.trim();
+        if (!camId) return alert("Camera ID required");
+
+        connectBtn.disabled = true;
+        logStatus("Connecting WebSocket...");
+
+        // 1. Establish WebSocket
+        const wsUrl = `ws://${window.location.host}/ws`;
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = async () => {
+            logStatus("WebSocket Connected. Initializing WebRTC...");
+            
+            // 2. Create PeerConnection
+            pc = new RTCPeerConnection({
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+            });
+
+            // 3. Setup Tranceivers to indicate we want to receive video
+            pc.addTransceiver('video', { direction: 'recvonly' });
+
+            // 4. Handle incoming tracks
+            pc.ontrack = (event) => {
+                logStatus("Received Remote Track!");
+                if (videoPlayer.srcObject !== event.streams[0]) {
+                    videoPlayer.srcObject = event.streams[0];
+                }
+            };
+
+            // 5. ICE Candidate Trickle
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    ws.send(JSON.stringify({
+                        type: 'candidate',
+                        session_id: sessionId,
+                        camera_id: camId,
+                        candidate: JSON.stringify(event.candidate)
+                    }));
+                }
+            };
+
+            pc.onconnectionstatechange = () => {
+                logStatus(`WebRTC State: ${pc.connectionState}`);
+                if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+                    connectBtn.disabled = false;
+                }
+            };
+
+            // 6. Create and send Offer
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+
+            logStatus("Sending SDP Offer...");
+            ws.send(JSON.stringify({
+                type: 'offer',
+                session_id: sessionId,
+                camera_id: camId,
+                sdp: offer.sdp
+            }));
+        };
+
+        ws.onmessage = async (event) => {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'answer') {
+                logStatus("Received SDP Answer");
+                await pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp });
+            } else if (msg.type === 'candidate') {
+                const candidate = JSON.parse(msg.candidate);
+                await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            }
+        };
+
+        ws.onclose = () => {
+            logStatus("WebSocket Disconnected.");
+            connectBtn.disabled = false;
+        };
+    });
+</script>
+</body>
+</html>

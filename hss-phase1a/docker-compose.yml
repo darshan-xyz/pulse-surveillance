@@ -1,0 +1,18 @@
+version: '3.8'
+services:
+  hss-core:
+    build: .
+    volumes:
+      - ./data:/app/data
+      - ./storage:/app/storage
+      - ./config:/app/config
+    ports:
+      - "8080:8080" # Local Dashboard/API
+      - "8443:8443" # WebRTC/WebSockets
+    restart: unless-stopped
+
+  # Simulated IP Camera for testing
+  camera-simulator:
+    image: aler9/rtsp-simple-server
+    ports:
+      - "8554:8554" # RTSP

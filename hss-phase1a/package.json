@@ -1,0 +1,16 @@
+{
+  "name": "pulse-hss-phase1a",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pulse Streaming & Remote Tunnel Automation",
+  "scripts": {
+    "start": "node scripts/start_all.cjs",
+    "tunnel": "node scripts/provision_tunnel.cjs",
+    "tunnel:dry": "node scripts/provision_tunnel.cjs --dry-run",
+    "tunnel:lan": "node scripts/provision_tunnel.cjs --lan-only",
+    "stream:public": "node scripts/provision_tunnel.cjs",
+    "test": "node --test scripts/provision_tunnel.test.cjs",
+    "test:web": "npm --prefix web_dashboard test",
+    "test:all": "npm test && npm run test:web"
+  }
+}

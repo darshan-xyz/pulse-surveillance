@@ -1,0 +1,26 @@
+# Build Stage
+FROM golang:alpine AS builder
+
+# Install libpcap-dev and gcc if we were using raw network capture, but for pure Go WebRTC, alpine is fine
+RUN apk add --no-cache git
+
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+# Build the Edge Daemon
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o pulse-edge ./cmd/hss
+
+# Final Stage (Alpine for basic shell access if needed)
+FROM alpine:3.18
+
+RUN apk add --no-cache ca-certificates
+
+COPY --from=builder /app/pulse-edge /usr/local/bin/pulse-edge
+
+# Expose WebRTC ICE ports (UDP) if running in bridge mode (usually runs host mode)
+EXPOSE 8500-8600/udp
+
+ENTRYPOINT ["pulse-edge"]

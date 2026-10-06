@@ -1,0 +1,65 @@
+{
+  "expo": {
+    "name": "Pulse Mobile",
+    "slug": "pulse-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0a0a0a"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.pulse.mobile",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "voip",
+          "remote-notification"
+        ]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0a0a0a"
+      },
+      "package": "com.pulse.mobile",
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.POST_NOTIFICATIONS"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      [
+        "@react-native-webrtc/react-native-webrtc",
+        {
+          "cameraPermission": "Allow Pulse to access your camera for WebRTC.",
+          "microphonePermission": "Allow Pulse to access your microphone for WebRTC."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#00ff88"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "13.4"
+          }
+        }
+      ]
+    ]
+  }
+}

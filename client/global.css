@@ -1,0 +1,119 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /**
+   * Tailwind CSS theme
+   * tailwind.config.ts expects the following color variables to be expressed as HSL values.
+   * A different format will require also updating the theme in tailwind.config.ts.
+  */
+  :root {
+    --background: 220 100% 98%; /* Soft blue background */
+    --foreground: 260 80% 12%; /* Deep purple text */
+
+    --card: 0 0% 100%;
+    --card-foreground: 260 80% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 260 80% 12%;
+
+    --primary: 265 90% 65%; /* Vibrant purple */
+    --primary-foreground: 48 100% 98%;
+
+    --secondary: 200 95% 85%; /* Bright blue */
+    --secondary-foreground: 260 80% 12%;
+
+    --muted: 320 80% 95%; /* Soft pink */
+    --muted-foreground: 265 40% 40%;
+
+    --accent: 48 100% 85%; /* Vibrant yellow */
+    --accent-foreground: 260 80% 12%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 48 100% 98%;
+
+    --border: 265 60% 90%; /* Light purple border */
+    --input: 200 80% 92%; /* Light blue input */
+    --ring: 265 90% 65%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 48 100% 97%; /* Soft yellow sidebar */
+    --sidebar-foreground: 260 80% 12%;
+    --sidebar-primary: 265 90% 65%;
+    --sidebar-primary-foreground: 48 100% 98%;
+    --sidebar-accent: 320 80% 95%;
+    --sidebar-accent-foreground: 260 80% 12%;
+    --sidebar-border: 265 60% 90%;
+    --sidebar-ring: 265 90% 65%;
+  }
+
+  .dark {
+    --background: 224 71% 4%;
+    --foreground: 180 100% 90%;
+
+    --card: 224 71% 4%;
+    --card-foreground: 180 100% 90%;
+
+    --popover: 224 71% 4%;
+    --popover-foreground: 180 100% 90%;
+
+    --primary: 180 100% 70%;
+    --primary-foreground: 224 71% 4%;
+
+    --secondary: 215 28% 17%;
+    --secondary-foreground: 285 100% 80%;
+
+    --muted: 215 28% 17%;
+    --muted-foreground: 195 100% 75%;
+
+    --accent: 215 28% 17%;
+    --accent-foreground: 315 100% 75%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 180 100% 90%;
+
+    --border: 215 28% 17%;
+    --input: 215 28% 17%;
+    --ring: 180 100% 70%;
+
+    /* Neon colors for surveillance theme */
+    --neon-cyan: 180 100% 70%;
+    --neon-purple: 285 100% 75%;
+    --neon-green: 120 100% 70%;
+    --neon-pink: 315 100% 75%;
+    --neon-blue: 210 100% 70%;
+
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  html, body {
+    scroll-behavior: smooth;
+  }
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  @keyframes shimmer {
+    100% { transform: translateX(100%); }
+  }
+  .animate-shimmer {
+    animation: shimmer 1.5s infinite linear;
+  }
+}

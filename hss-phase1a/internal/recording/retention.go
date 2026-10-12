@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"log"
 	"os"
+	"path/filepath"
 	"time"
 
 	"hss/internal/config"
@@ -92,14 +93,28 @@ func (re *RetentionEngine) RunGarbageCollector(ctx context.Context) {
 }
 
 func (re *RetentionEngine) checkDiskUsage(ctx context.Context) {
-	// Simple mock calculation for disk usage MVP to avoid OS-specific CGO bindings on Windows
-	simulatedUsage := 85 // Mock high usage to trigger cleanup for testing
+	recPath := config.AppConfig.Storage.RecordingsPath
+	if recPath == "" {
+		recPath = "./data/recordings"
+	}
 
-	if simulatedUsage > re.MaxDiskPercent {
-		log.Printf("CRITICAL: Disk usage at %d%% (Max %d%%). Triggering retention cleanup!\n", simulatedUsage, re.MaxDiskPercent)
+	var totalBytes int64
+	_ = filepath.Walk(recPath, func(_ string, info os.FileInfo, err error) error {
+		if err == nil && info != nil && !info.IsDir() {
+			totalBytes += info.Size()
+		}
+		return nil
+	})
+
+	// Default 10 GB edge recording quota for percentage watermark calculation
+	const quotaBytes = int64(10 * 1024 * 1024 * 1024)
+	usagePercent := int((totalBytes * 100) / quotaBytes)
+
+	if re.MaxDiskPercent > 0 && usagePercent > re.MaxDiskPercent {
+		log.Printf("CRITICAL: Disk usage at %d%% (Max %d%%). Triggering retention cleanup!\n", usagePercent, re.MaxDiskPercent)
 		re.cleanupOldest(ctx)
-	} else if simulatedUsage > config.AppConfig.Storage.WarningDiskPercent {
-		log.Printf("WARNING: Disk usage at %d%%. Approaching threshold.\n", simulatedUsage)
+	} else if config.AppConfig.Storage.WarningDiskPercent > 0 && usagePercent > config.AppConfig.Storage.WarningDiskPercent {
+		log.Printf("WARNING: Disk usage at %d%%. Approaching threshold.\n", usagePercent)
 	}
 }
 

@@ -68,9 +68,76 @@ _model_path_used = None
 _class_names = {0: "fire", 1: "smoke"}
 _cached_sps_pps = b""
 
+# Prometheus telemetry state
+_metrics_lock = threading.Lock()
+_ai_metrics = {
+    "requests_total": 0,
+    "fire_detections_total": 0,
+    "smoke_detections_total": 0,
+    "last_inference_ms": 0.0,
+}
+
+# Temporal Confirmation & Optical Flow state per camera
+_temporal_lock = threading.Lock()
+_camera_streaks: Dict[str, Dict[str, Any]] = {}
+TEMPORAL_CONFIRM_FRAMES = int(os.environ.get("TEMPORAL_CONFIRM_FRAMES", "3"))
+
 DEFAULT_CONFIDENCE_THRESHOLD = float(os.environ.get("CONFIDENCE_THRESHOLD", "0.35"))
 DEFAULT_FIRE_THRESHOLD = float(os.environ.get("FIRE_THRESHOLD", "0.35"))
 DEFAULT_SMOKE_THRESHOLD = float(os.environ.get("SMOKE_THRESHOLD", "0.30"))
+
+
+def update_temporal_and_flow_state(
+    camera_id: str,
+    image: Image.Image,
+    has_fire: bool,
+    has_smoke: bool,
+) -> Dict[str, Any]:
+    """
+    Tracks multi-frame temporal streaks (N consecutive frames) and dense Farneback
+    optical flow motion energy per camera to verify sustained fire/smoke dynamics.
+    """
+    gray_small = np.array(image.resize((160, 120)).convert("L"), dtype=np.uint8)
+    motion_score = 0.0
+
+    with _temporal_lock:
+        state = _camera_streaks.get(camera_id)
+        if state is None:
+            state = {
+                "fire_streak": 0,
+                "smoke_streak": 0,
+                "prev_gray": None,
+            }
+            _camera_streaks[camera_id] = state
+
+        prev_gray = state.get("prev_gray")
+        if prev_gray is not None and prev_gray.shape == gray_small.shape:
+            try:
+                flow = cv2.calcOpticalFlowFarneback(
+                    prev_gray, gray_small, None, 0.5, 2, 11, 2, 5, 1.1, 0
+                )
+                mag, _ = cv2.cartToPolar(flow[..., 0], flow[..., 1])
+                motion_score = float(np.mean(mag))
+            except Exception:
+                motion_score = 0.0
+
+        state["prev_gray"] = gray_small
+        state["fire_streak"] = (state["fire_streak"] + 1) if has_fire else 0
+        state["smoke_streak"] = (state["smoke_streak"] + 1) if has_smoke else 0
+
+        fire_streak = state["fire_streak"]
+        smoke_streak = state["smoke_streak"]
+        confirmed = (
+            fire_streak >= TEMPORAL_CONFIRM_FRAMES
+            or smoke_streak >= TEMPORAL_CONFIRM_FRAMES
+        )
+
+    return {
+        "fire_streak": fire_streak,
+        "smoke_streak": smoke_streak,
+        "temporal_confirmed": confirmed,
+        "motion_score": round(motion_score, 4),
+    }
 
 
 def resolve_model_path() -> str:
@@ -148,6 +215,10 @@ class DetectionResponse(BaseModel):
     detections_count: int = Field(0, description="Total count of detections meeting threshold")
     has_fire: bool = Field(False, description="True if any fire detected with conf >= threshold")
     has_smoke: bool = Field(False, description="True if any smoke detected with conf >= threshold")
+    fire_streak: int = Field(0, description="Consecutive frames with fire detected on this camera")
+    smoke_streak: int = Field(0, description="Consecutive frames with smoke detected on this camera")
+    temporal_confirmed: bool = Field(False, description="True if streak >= TEMPORAL_CONFIRM_FRAMES")
+    motion_score: float = Field(0.0, description="Optical flow motion magnitude score")
     detections: List[DetectionItem] = Field(default_factory=list, description="List of detected objects")
 
 
@@ -253,6 +324,21 @@ def run_detection_on_image(
                     )
                 )
 
+    temporal_info = update_temporal_and_flow_state(
+        camera_id=camera_id,
+        image=image,
+        has_fire=has_fire,
+        has_smoke=has_smoke,
+    )
+
+    with _metrics_lock:
+        _ai_metrics["requests_total"] += 1
+        if has_fire:
+            _ai_metrics["fire_detections_total"] += 1
+        if has_smoke:
+            _ai_metrics["smoke_detections_total"] += 1
+        _ai_metrics["last_inference_ms"] = round(inference_time_ms, 2)
+
     return DetectionResponse(
         camera_id=camera_id,
         timestamp=time.time(),
@@ -260,6 +346,10 @@ def run_detection_on_image(
         detections_count=len(detections),
         has_fire=has_fire,
         has_smoke=has_smoke,
+        fire_streak=temporal_info["fire_streak"],
+        smoke_streak=temporal_info["smoke_streak"],
+        temporal_confirmed=temporal_info["temporal_confirmed"],
+        motion_score=temporal_info["motion_score"],
         detections=detections,
     )
 
@@ -347,7 +437,33 @@ async def health_check():
         "default_threshold": DEFAULT_CONFIDENCE_THRESHOLD,
         "fire_threshold": DEFAULT_FIRE_THRESHOLD,
         "smoke_threshold": DEFAULT_SMOKE_THRESHOLD,
+        "temporal_confirm_frames": TEMPORAL_CONFIRM_FRAMES,
     }
+
+
+@app.get("/metrics")
+async def prometheus_metrics():
+    """Prometheus telemetry endpoint for AI inference statistics."""
+    with _metrics_lock:
+        reqs = _ai_metrics["requests_total"]
+        fires = _ai_metrics["fire_detections_total"]
+        smokes = _ai_metrics["smoke_detections_total"]
+        lat = _ai_metrics["last_inference_ms"]
+    body = (
+        "# HELP pulse_ai_requests_total Total inference requests processed\n"
+        "# TYPE pulse_ai_requests_total counter\n"
+        f"pulse_ai_requests_total {reqs}\n\n"
+        "# HELP pulse_ai_fire_detections_total Total frames with fire detected\n"
+        "# TYPE pulse_ai_fire_detections_total counter\n"
+        f"pulse_ai_fire_detections_total {fires}\n\n"
+        "# HELP pulse_ai_smoke_detections_total Total frames with smoke detected\n"
+        "# TYPE pulse_ai_smoke_detections_total counter\n"
+        f"pulse_ai_smoke_detections_total {smokes}\n\n"
+        "# HELP pulse_ai_last_inference_ms Latency of the most recent YOLO11 inference\n"
+        "# TYPE pulse_ai_last_inference_ms gauge\n"
+        f"pulse_ai_last_inference_ms {lat}\n"
+    )
+    return Response(content=body, media_type="text/plain; version=0.0.4")
 
 
 @app.post("/detect", response_model=DetectionResponse)

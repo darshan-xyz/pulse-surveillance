@@ -51,6 +51,8 @@ func main() {
 	http.HandleFunc("/api/turn/credentials", api.HandleTurnCredentials)
 	http.HandleFunc("/api/devices", api.HandleDevices)
 	http.HandleFunc("/api/push/register", api.HandlePushRegister)
+	http.HandleFunc("/api/events", api.HandleEvents)
+	http.HandleFunc("/api/audit", api.HandleAudit)
 
 	wsLimiter := security.NewIPRateLimiter(security.DefaultWSRateLimit, security.DefaultWSBurst)
 	http.HandleFunc("/signaling", security.RateLimitMiddleware(wsLimiter, signaling.HandleDeviceConnection))

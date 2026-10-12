@@ -4,11 +4,15 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"hss/internal/cloud/db"
 	"hss/internal/cloud/push"
 	"hss/internal/database"
+	"hss/internal/metrics"
+	"hss/internal/security"
 	"github.com/google/uuid"
 )
 
@@ -34,6 +38,8 @@ type Event struct {
 }
 
 type Engine struct {
+	mu        sync.RWMutex
+	history   []Event
 	eventChan chan Event
 	ctx       context.Context
 	cancel    context.CancelFunc
@@ -44,6 +50,7 @@ var DefaultEngine = NewEngine()
 
 func NewEngine() *Engine {
 	return &Engine{
+		history:   make([]Event, 0, 128),
 		eventChan: make(chan Event, 256),
 	}
 }
@@ -68,11 +75,50 @@ func (e *Engine) Emit(evt Event) {
 		evt.StartedAt = time.Now()
 	}
 
+	atomic.AddInt64(&metrics.EventsEmitted, 1)
+
+	e.mu.Lock()
+	if len(e.history) >= 500 {
+		e.history = append(e.history[1:], evt)
+	} else {
+		e.history = append(e.history, evt)
+	}
+	e.mu.Unlock()
+
+	if security.DefaultAuditLogger != nil {
+		security.DefaultAuditLogger.Record(
+			"engine:events",
+			string(evt.Type),
+			fmt.Sprintf("camera:%s", evt.CameraID),
+			map[string]interface{}{
+				"event_id":   evt.ID,
+				"confidence": evt.Confidence,
+			},
+		)
+	}
+
 	select {
 	case e.eventChan <- evt:
 	default:
 		log.Println("WARNING: Event channel full, dropping event:", evt.Type)
 	}
+}
+
+// ListRecent returns up to limit recent events in reverse chronological order (newest first).
+func (e *Engine) ListRecent(limit int) []Event {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	total := len(e.history)
+	if limit <= 0 || limit > total {
+		limit = total
+	}
+
+	res := make([]Event, 0, limit)
+	for i := total - 1; i >= total-limit; i-- {
+		res = append(res, e.history[i])
+	}
+	return res
 }
 
 func (e *Engine) processLoop(ctx context.Context) {

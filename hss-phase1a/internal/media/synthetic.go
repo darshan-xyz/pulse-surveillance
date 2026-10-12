@@ -173,8 +173,8 @@ func GenerateSPS(width, height int) []byte {
 	bw.WriteUE(0)
 	// log2_max_pic_order_cnt_lsb_minus4 = 0 (poc is 4 bits)
 	bw.WriteUE(0)
-	// max_num_ref_frames = 4
-	bw.WriteUE(4)
+	// max_num_ref_frames = 1
+	bw.WriteUE(1)
 	// gaps_in_frame_num_value_allowed_flag = 0
 	bw.WriteBit(0)
 	// pic_width_in_mbs_minus1 = width/16 - 1

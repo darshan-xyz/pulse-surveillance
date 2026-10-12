@@ -35,13 +35,17 @@ type Detection struct {
 
 // DetectionResponse represents the complete inference payload returned by the AI inference service.
 type DetectionResponse struct {
-	CameraID        string      `json:"camera_id"`
-	Timestamp       float64     `json:"timestamp"`
-	InferenceTimeMs float64     `json:"inference_time_ms"`
-	DetectionsCount int         `json:"detections_count"`
-	HasFire         bool        `json:"has_fire"`
-	HasSmoke        bool        `json:"has_smoke"`
-	Detections      []Detection `json:"detections"`
+	CameraID          string      `json:"camera_id"`
+	Timestamp         float64     `json:"timestamp"`
+	InferenceTimeMs   float64     `json:"inference_time_ms"`
+	DetectionsCount   int         `json:"detections_count"`
+	HasFire           bool        `json:"has_fire"`
+	HasSmoke          bool        `json:"has_smoke"`
+	FireStreak        int         `json:"fire_streak,omitempty"`
+	SmokeStreak       int         `json:"smoke_streak,omitempty"`
+	TemporalConfirmed bool        `json:"temporal_confirmed,omitempty"`
+	MotionScore       float64     `json:"motion_score,omitempty"`
+	Detections        []Detection `json:"detections"`
 }
 
 // DetectionCallback is invoked when new detections meeting the confidence threshold are produced.

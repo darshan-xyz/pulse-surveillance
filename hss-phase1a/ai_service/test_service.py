@@ -158,6 +158,37 @@ def test_confidence_threshold_filtering():
     assert res_std.has_fire is True
 
 
+def test_temporal_confirmation_and_metrics():
+    """Verify multi-frame temporal streak confirmation, optical flow, and /metrics endpoint."""
+    img = get_fire_test_frame()
+    cam_id = "temporal-test-cam"
+
+    r1 = run_detection_on_image(img, camera_id=cam_id, confidence_threshold=0.40)
+    assert r1.fire_streak == 1
+    assert r1.temporal_confirmed is False
+
+    r2 = run_detection_on_image(img, camera_id=cam_id, confidence_threshold=0.40)
+    assert r2.fire_streak == 2
+    assert r2.temporal_confirmed is False
+
+    r3 = run_detection_on_image(img, camera_id=cam_id, confidence_threshold=0.40)
+    assert r3.fire_streak >= 3
+    assert r3.temporal_confirmed is True
+
+    # Normal frame resets streak
+    normal = get_normal_frame()
+    r4 = run_detection_on_image(normal, camera_id=cam_id, confidence_threshold=0.40)
+    assert r4.fire_streak == 0
+    assert r4.temporal_confirmed is False
+    assert r4.motion_score >= 0.0
+
+    # Verify Prometheus /metrics endpoint
+    metrics_resp = client.get("/metrics")
+    assert metrics_resp.status_code == 200
+    assert "pulse_ai_requests_total" in metrics_resp.text
+    assert "pulse_ai_fire_detections_total" in metrics_resp.text
+
+
 if __name__ == "__main__":
     print("Running AI Service Unit Tests...")
     import pytest

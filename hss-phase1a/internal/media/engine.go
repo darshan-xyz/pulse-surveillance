@@ -32,6 +32,7 @@ type Engine struct {
 	cachedKeyframe map[string]MediaPacket
 	syntheticGens  map[string]*SyntheticVideoGenerator
 	keyframeReqs   map[string]chan struct{}
+	ringBuffers    map[string]*RingBuffer
 }
 
 func NewEngine() *Engine {
@@ -44,6 +45,7 @@ func NewEngine() *Engine {
 		cachedKeyframe: make(map[string]MediaPacket),
 		syntheticGens:  make(map[string]*SyntheticVideoGenerator),
 		keyframeReqs:   make(map[string]chan struct{}),
+		ringBuffers:    make(map[string]*RingBuffer),
 	}
 }
 
@@ -82,6 +84,7 @@ func (e *Engine) AttachCamera(cam Camera) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	e.cancelFuncs[cam.ID()] = cancel
 	e.keyframeReqs[cam.ID()] = make(chan struct{}, 16)
+	e.ringBuffers[cam.ID()] = NewRingBuffer(256)
 
 	// Create Pion WebRTC video track
 	videoTrack, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264}, "video", "pion")
@@ -99,6 +102,7 @@ func (e *Engine) AttachCamera(cam Camera) error {
 	// Seed cached SPS/PPS/IDR immediately with synthetic generator
 	initialKF := syntheticGen.GenerateNextFrame()
 	e.updateCachedStateLocked(cam.ID(), initialKF)
+	e.ringBuffers[cam.ID()].Push(initialKF)
 	e.mu.Unlock()
 
 	// Initial RTP packet dispatch outside the lock
@@ -160,15 +164,21 @@ func (e *Engine) updateCachedStateLocked(camID string, mp MediaPacket) MediaPack
 
 func (e *Engine) processMediaPacket(camID string, mp MediaPacket, videoTrack *webrtc.TrackLocalStaticRTP) {
 	var subs []chan MediaPacket
+	var rb *RingBuffer
 
 	// Fast critical section: update cached state and snapshot subscriber slice
 	e.mu.Lock()
 	mp = e.updateCachedStateLocked(camID, mp)
+	rb = e.ringBuffers[camID]
 	if srcSubs := e.subscribers[camID]; len(srcSubs) > 0 {
 		subs = make([]chan MediaPacket, len(srcSubs))
 		copy(subs, srcSubs)
 	}
 	e.mu.Unlock()
+
+	if rb != nil {
+		rb.Push(mp)
+	}
 
 	// Lock-free dispatch to WebRTC video track (outside e.mu critical section)
 	if videoTrack != nil {
@@ -355,6 +365,7 @@ func (e *Engine) DetachCamera(camID string) error {
 		delete(e.cachedKeyframe, camID)
 		delete(e.syntheticGens, camID)
 		delete(e.keyframeReqs, camID)
+		delete(e.ringBuffers, camID)
 
 		// Close all subscriber channels
 		if subs, ok := e.subscribers[camID]; ok {
@@ -465,6 +476,14 @@ func (e *Engine) GetSyntheticGenerator(camID string) *SyntheticVideoGenerator {
 	defer e.mu.RUnlock()
 	targetID := e.resolveCamIDLocked(camID)
 	return e.syntheticGens[targetID]
+}
+
+// GetRingBuffer returns the hot-path circular RingBuffer for a camera, if attached.
+func (e *Engine) GetRingBuffer(camID string) *RingBuffer {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	targetID := e.resolveCamIDLocked(camID)
+	return e.ringBuffers[targetID]
 }
 
 var DefaultEngine = NewEngine()
